@@ -1,63 +1,75 @@
-import numpy as np
-import matplotlib.pyplot as plt
 import cv2 as cv
+import numpy as np
 
-N = 4 # Number of points
-n = 0
+# Read the background and logo images
+img3 = cv.imread("Images/005.jpg")
+logo = cv.imread("Images/flag.png")
 
-# Parameters of the two images
-p = np.empty((N,2))
-p_flag = np.empty((N,2))
+# Check if images are loaded correctly
+if img3 is None or logo is None:
+    print("Error: One or both images not found or path is incorrect.")
+    exit()
 
-# Mouse callback function
-def draw(event,x,y,flags,param):
-    global n
-    p = param[0]
+# Print the shapes of the images
+print(f"Background image shape: {img3.shape}")
+print(f"Logo image shape: {logo.shape}")
+
+# Store clicked points for the destination
+dst_points = []
+
+# Mouse callback function to store points
+def click_event(event, x, y, flags, param):
     if event == cv.EVENT_LBUTTONDOWN:
-        cv.circle(param[1],(x,y),5,(255,0,0),-1)
-        p[n] = (x,y)
-        n += 1
+        if len(dst_points) < 4:  # We only need 4 points
+            dst_points.append((x, y))
+            cv.circle(img3, (x, y), 5, (0, 0, 255), -1)  # Mark the clicked point
+            cv.imshow("Select 4 Points", img3)  # Show updated image
+        if len(dst_points) == 4:
+            cv.destroyWindow("Select 4 Points")  # Close the window after 4 points
 
-# Importing the images and creating copies
-image_background = cv.imread(r'Images/005.jpg', cv.IMREAD_COLOR)
-image_superimposed = cv.imread(r"Images/flag.png", cv.IMREAD_COLOR)
-image_background_copy = image_background.copy()
-image_superimposed_copy = image_superimposed.copy()
+# Display the image and set the mouse callback
+cv.imshow("Select 4 Points", img3)
+cv.setMouseCallback("Select 4 Points", click_event)
+cv.waitKey(0)
 
-# Getting the mouse points of the base image
-cv.namedWindow('Image', cv.WINDOW_AUTOSIZE)
-param = [p, image_background_copy]
-cv.setMouseCallback('Image',draw, param)
-while(1):
-    cv.imshow('Image', image_background_copy)
-    if n == N:
-        break
-    if cv.waitKey(20) & 0xFF == 27:
-        break
-cv.destroyAllWindows()
+# Check if we have exactly 4 points
+if len(dst_points) != 4:
+    print("Error: You need to select exactly 4 points.")
+else:
+    dst_points = np.array(dst_points, dtype=np.float32)
 
-# Automatically get the corners of the flag image
-h, w = image_superimposed.shape[:2]
-p_flag[0] = [0, 0]               # Top-left corner
-p_flag[1] = [w - 1, 0]           # Top-right corner
-p_flag[2] = [w - 1, h - 1]       # Bottom-right corner
-p_flag[3] = [0, h - 1]           # Bottom-left corner
+    # Define the source points (corners of the logo)
+    y, x, _ = logo.shape
+    src_points = np.array([[0, y], [x, y], [x, 0], [0, 0]], dtype=np.float32)
 
+    # Calculate the perspective transformation matrix
+    M = cv.getPerspectiveTransform(src_points, dst_points)
+    print("Transformation matrix:\n", M)  # Print the matrix for debugging
 
-h, status = cv.findHomography(p, p_flag) # Calculating homography between image and flag
+    # Warp the logo to fit into the selected region in the background image
+    tf_img = cv.warpPerspective(logo, M, (img3.shape[1], img3.shape[0]))
 
-# Warping image of flag
-warped_img = cv.warpPerspective(image_superimposed, np.linalg.inv(h), (image_background.shape[1],image_background.shape[0])) 
+    # Display the warped logo for debugging
+    cv.imshow("Warped Logo", tf_img)
+    cv.waitKey(0)
 
-blended = cv.addWeighted(image_background, 0.5, warped_img, 0.9, 0.0)
-fig, ax = plt.subplots(1,1,figsize= (8,8))
-ax.imshow(cv.cvtColor(blended,cv.COLOR_BGR2RGB))
+    # Create a mask for the logo
+    logo_gray = cv.cvtColor(tf_img, cv.COLOR_BGR2GRAY)
+    _, mask = cv.threshold(logo_gray, 1, 255, cv.THRESH_BINARY)
 
-# Plotting the results
-fig,ax=plt.subplots(1,3,figsize=(21,7))
-ax[0].imshow(cv.cvtColor(image_background,cv.COLOR_BGR2RGB))
-ax[0].set_title("Source Image")
-ax[1].imshow(cv.cvtColor(image_superimposed,cv.COLOR_BGR2RGB))
-ax[1].set_title("Flag Image")
-ax[2].imshow(cv.cvtColor(blended,cv.COLOR_BGR2RGB))
-ax[2].set_title("Final Image")
+    # Invert the mask to select the background region
+    mask_inv = cv.bitwise_not(mask)
+
+    # Black-out the area of the logo in the background image
+    img3_bg = cv.bitwise_and(img3, img3, mask=mask_inv)
+
+    # Take only the logo region from the warped logo image
+    logo_fg = cv.bitwise_and(tf_img, tf_img, mask=mask)
+
+    # Add the background and logo regions
+    final_img = cv.add(img3_bg, logo_fg)
+
+    # Display the final image
+    cv.imshow("Final Image", final_img)
+    cv.waitKey(0)
+    cv.destroyAllWindows()
