@@ -4,8 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Load the architectural image and the flag image
-arch_image = cv.imread('Images/005.jpg')
-flag_image = cv.imread('Images/flag.png')
+arch_image = cv.imread('tshirt.jpeg')
+flag_image = cv.imread('text.png')
 
 # Check if images are loaded correctly
 if arch_image is None or flag_image is None:
